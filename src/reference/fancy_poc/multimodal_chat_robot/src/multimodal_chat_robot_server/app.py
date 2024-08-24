@@ -8,6 +8,7 @@ from common.log import logger
 if __name__ == '__main__':
     try:
         config.load_config()
+        #channel 为一个class SocketChannel
         channel = channel_factory.create_channel("Client_Server")
         channel.startup()
     except Exception as e:

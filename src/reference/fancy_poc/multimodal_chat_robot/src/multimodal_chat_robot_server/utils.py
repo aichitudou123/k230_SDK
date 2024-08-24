@@ -15,7 +15,11 @@ def move_dict_with_role_to_penultimate(lst):
     return lst
 
 def generator_image(prompt,client_socket):
-
+    """  prompt : Sure! {i_g: A duck swimming in a calm pond, 
+    with ripples forming around it. The duck is gracefully gliding through the water,
+    with its head held high and its wings slightly spread. The background is a serene 
+    landscape with trees and bushes, and the lighting is soft and warm.}\n
+    希望你会喜欢这幅画！"""
     def stable_diffusion_callback(progress_i, progress_t, inference_lantence):
         progress = int((progress_i + 1) / 26 * 100)
         formatted_progress = "{}%".format(progress)
@@ -42,13 +46,13 @@ def generator_image(prompt,client_socket):
         p = random.random()
         if p < 0.6:
             pipeline = StableDiffusionPipeline.from_pretrained(
-                r"model_sd\Realistic_Vision_V2.0")
+                r"..\model_sd\Realistic_Vision_V2.0")
         elif p > 0.8:
             pipeline = StableDiffusionPipeline.from_pretrained(
-                r"model_sd\dreamlilke-photoreal-v2.0")
+                r"..\model_sd\dreamlilke-photoreal-v2.0")
         else:
             pipeline = StableDiffusionPipeline.from_pretrained(
-                r"model_sd\Deliberate")
+                r"..\model_sd\Deliberate")
     pipeline.to("cuda")
     pipeline.scheduler = DPMSolverMultistepScheduler.from_config(
         pipeline.scheduler.config, clip_sample=False)

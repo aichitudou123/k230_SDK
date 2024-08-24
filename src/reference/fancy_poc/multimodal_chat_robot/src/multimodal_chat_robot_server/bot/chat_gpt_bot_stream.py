@@ -7,6 +7,8 @@ from utils import move_dict_with_role_to_penultimate
 import openai
 import time
 import json
+import os
+from openai import OpenAI
 
 if conf().get('expires_in_seconds'):
     all_sessions = ExpiredDict(conf().get('expires_in_seconds'))
@@ -15,14 +17,18 @@ else:
 # OpenAI对话模型API (可用)
 class ChatGPTBot(Bot):
     def __init__(self):
-        openai.api_key = conf().get('open_ai_api_key')
-        if conf().get('open_ai_api_base'):
-            openai.api_base = conf().get('open_ai_api_base')
-        proxy = conf().get('proxy')
-        if proxy:
-            openai.proxy = proxy
+        print(f"your gpt-key:{conf().get('open_ai_api_key')}")
+        # openai.api_key = conf().get('open_ai_api_key')
+        # if conf().get('open_ai_api_base'):
+        #     openai.api_base = conf().get('open_ai_api_base')
+        # proxy = conf().get('proxy')
+
+        # if proxy:
+        #     openai.proxy = proxy
 
     def reply(self, query, context=None):
+        print(f"your query is :{query}")  
+        print(f"your context is :{context}") #{'from_user_id': 'User'}
         if query == "##清除记忆":
             Session.clear_all_session()
         else:
@@ -40,11 +46,14 @@ class ChatGPTBot(Bot):
                 session = Session.build_session_query(query, session_id)
                 logger.debug("[OPEN_AI] session query={}".format(session))
                 reply_content = self.reply_text(session, session_id, 0)
+                
+                print(f"reply_content : {reply_content}")
                 return reply_content
             elif context.get('type', None) == 'IMAGE_CREATE':
                 return self.create_img(query, 0)
 
     def reply_text(self, session, session_id, retry_count=0) -> dict:
+        print("this is reply_text")
         '''
                call openai's ChatCompletion to get the answer
                :param session: a conversation session
@@ -54,47 +63,70 @@ class ChatGPTBot(Bot):
                '''
         try:
             session = move_dict_with_role_to_penultimate(session)
-            response = openai.ChatCompletion.create(
-                model=conf().get("model") or "gpt-3.5-turbo",
-                # model= conf().get("model") or "text-davinci-003",# 对话模型的名称
+            os.environ["OPENAI_API_KEY"] = "sk-mQ6HoW8EprruhS7qoXsLCgkODMxGyxYBgy6hlLL7Uq3VJNuU"
+            os.environ["OPENAI_BASE_URL"] = "https://api.chatanywhere.tech"
+            client = OpenAI(
+                    # 下面两个参数的默认值来自环境变量，可以不加
+                    api_key=os.environ.get("OPENAI_API_KEY"),
+                    base_url=os.environ.get("OPENAI_BASE_URL"),
+                )
+            
+            response = client.chat.completions.create(
+                # model=conf().get("model") or "gpt-3.5-turbo",
+                # # model= conf().get("model") or "text-davinci-003",# 对话模型的名称
                 messages=session,
                 temperature=0,  # 值在[0,1]之间，越大表示回复越具有不确定性
                 max_tokens=2000,  # 回复最大的字符数
                 top_p=1,
                 frequency_penalty=0.0,  # [-2,2]之间，该值越大则更倾向于产生不同的内容
                 presence_penalty=0.0,
-                stream=True
+                # stream=True
+                model="gpt-3.5-turbo",
+                # messages=[
+                #     # 系统角色的消息，用于设置对话的起始状态
+                #     {"role": "system", "content": "You are a helpful assistant."},
+                #     # 用户角色的消息，用于指示用户的输入
+                #     {"role": "user", "content": "写一篇小诗"}
+                # ]
             )
+
+            print(f"row response : {response}")
+            print(f"message content : {response.choices[0].message.content}")
             all_stream_content = ""
-            for r in response:
-                choices = r.get("choices")
-                delta = choices[0].get("delta")
-                if "content" in delta:
-                    content = delta["content"]
-                    all_stream_content += content
-                    yield content
+            content = response.choices[0].message.content
+            all_stream_content += content
+            yield content
+            # for r in response:
+            #     choices = r.get("choices")
+            #     delta = choices[0].get("delta")
+            #     if "content" in delta:
+            #         content = delta["content"]
+            #         all_stream_content += content
+            #         yield content
 
             Session.save_session(all_stream_content, session_id, len(all_stream_content))
-            print(all_sessions)
-        except openai.error.RateLimitError as e:
-            # rate limit exception
-            content = "提问太快啦，请休息一下再问我吧"
-            yield content
+            # print(all_sessions)
+        # except openai.error.RateLimitError as e:
+        #     # rate limit exception
+        #     content = "提问太快啦，请休息一下再问我吧"
+        #     yield content
 
-        except openai.error.APIConnectionError as e:
-            content = "网络连接失败"
-            yield content
-        except openai.error.Timeout as e:
-            content = "消息接收异常"
-            yield content
+        # except openai.error.APIConnectionError as e:
+        #     content = "网络连接失败"
+        #     yield content
+        # except openai.error.Timeout as e:
+        #     content = "消息接收异常"
+        #     yield content
         except Exception as e:
             # unknown exception
-            content = "问的太多啦，请休息一下再问我吧"
+            content = "问的太多啦，请休息一下再问我吧" #报此处错误
             yield content
 
 class Session(object):
     @staticmethod
     def build_session_query(query, session_id):
+        print(f"session_id : {session_id}")  #User
+        
         '''
         build query with conversation history
         e.g.  [

@@ -6,8 +6,18 @@ import time
 import struct
 import soundfile
 import whisper
+import fcntl
+
+def get_ip_address(ifname):
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        return socket.inet_ntoa(fcntl.ioctl(
+            s.fileno(),
+            0x8915, # SIOCGIFADDR
+            struct.pack('256s', ifname[:15].encode('utf-8'))
+        )[20:24])
 
 class SocketChannel(Channel):
+    
     def check_prefix(self, content, prefix_list):
         for prefix in prefix_list:
             if content.startswith(prefix):
@@ -21,10 +31,15 @@ class SocketChannel(Channel):
                 # 创建socket对象
                 self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 # 获取本地IP地址
-                ip_address = socket.gethostbyname(socket.gethostname())
-                print(ip_address)
+                interface_name = 'ens33'
+                my_ip_address = get_ip_address(interface_name)
+                print(f"指定网卡 ({interface_name}) 的IP地址: {my_ip_address}")
+                
+                # ip_address = socket.gethostbyname(socket.gethostname())
+                # print(ip_address)
                 # 绑定IP地址和端口号
-                self.server_socket.bind((ip_address, 8000))
+                # self.server_socket.bind((ip_address, 8020))
+                self.server_socket.bind((my_ip_address, 8072))
                 # 监听连接
                 self.server_socket.listen()
                 # 等待客户端连接
@@ -32,7 +47,7 @@ class SocketChannel(Channel):
                 while True:
                     client_socket, client_address = self.server_socket.accept()
                     print(f"Client {client_address[0]}:{client_address[1]} connected.")
-                    super().build_reply_content("##清除记忆", context=None)
+                    #super().build_reply_content("##清除记忆", context=None)
                     context = {"from_user_id": "User"}
                     print("\nPlease input your question")
                     while True:
@@ -43,6 +58,7 @@ class SocketChannel(Channel):
                             message_header = client_socket.recv(4)
                             if not message_header:
                                 break
+                            #'>I'告诉struct.unpack期望一个4字节的大端序无符号整数。
                             message_length = struct.unpack('>I', message_header)[0]
                             # 根据消息体长度接收完整数据
                             message = b''
@@ -53,6 +69,7 @@ class SocketChannel(Channel):
                                 message += data
                             if not message:
                                 break
+                             
                             if message.startswith(b'audio'):
                                 audio_data = message[5:]
                                 with open('2.wav', 'wb') as f:
@@ -67,16 +84,21 @@ class SocketChannel(Channel):
                                 # 处理数据
                                 prompt = message.decode('utf-8')
                             prompt=prompt.replace("\r\n","")
-                            print(prompt)
+                            print(f"from client {prompt}")
                             for res in super().build_reply_content(prompt, context):
+                                print("********************res*******************************")
+                                print(f"res : {res}")
+
                                 #判断是否要画画或者生成音乐，是则提取关键任务指令，不是则正常聊天
                                 if "{" in res:
                                     image_flag = True
                                     content = "小楠正在努力帮您创作，请耐心等待~"
-                                    response = content.encode('utf-8')
-                                    # 添加消息头，指定消息体的长度
+                                    response = content.encode('utf-8')                                
+                                    # # 添加消息头，指定消息体的长度
+                                    ##struct.pack将这个长度值打包成一个4字节长度的二进制数据，作为消息的头部。
                                     response_header = struct.pack('>I', len(response))
                                     client_socket.sendall(response_header + response)
+                                    
                                 if image_flag:
                                     prompt_task += res
                                 else:
@@ -88,17 +110,19 @@ class SocketChannel(Channel):
                                 # 如果进入任务程序，则判断是绘画还是音乐
                                 if "}" in res:
                                     if "i_g" in prompt_task:
-                                        image=generator_image(prompt_task,client_socket)
-                                        image.save("image.jpg")
+                                        print(f"prompt_task : {prompt_task}")            
+                                        # image=generator_image(prompt_task,client_socket)
+                                        # image.save("image.jpg")
                                         with open('image.jpg', 'rb') as f:
                                             image_data = f.read()
                                         message_header = struct.pack('>I', len(image_data))
                                         client_socket.sendall(message_header + image_data)
+                                        print("image send ok!")
                                         draw_flag = True
                                         # break
                                     else:
-                                        audio_two=generator_audio(prompt_task, client_socket)
-                                        soundfile.write("audio.wav", audio_two, samplerate=16000)
+                                        #audio_two=generator_audio(prompt_task, client_socket)
+                                        # soundfile.write("audio.wav", audio_two, samplerate=16000)
                                         with open('audio.wav', 'rb') as f:
                                             audio_data = f.read()
                                         message = b'audio' + audio_data
@@ -106,15 +130,16 @@ class SocketChannel(Channel):
                                         client_socket.sendall(message_header + message)
                                         draw_flag = True
 
-                                        # break
-                            if draw_flag:
-                                pass
-                            else:
-                                client_socket.sendall(struct.pack('>I', 3) + b'END')
+                                        break
+                            # if draw_flag:
+                            #     pass
+                            # else:
+                            #     client_socket.sendall(struct.pack('>I', 3) + b'END')
                         except KeyboardInterrupt:
                             print("\nExiting...")
                             sys.exit()
                     client_socket.close()
+        
             except Exception as e:
                 print(f"Exception occurred: {e}")
                 print("Restarting server in 1 seconds...")
